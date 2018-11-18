@@ -19,83 +19,84 @@ typedef enum {
 /**
  * @brief A document object.
  *
- * Uses union rather than separate structs to simplify the no-memory-alloc API
- * and to possibly facilitate use with a pool allocator.
+ * This is a bare document object; other objects extend it.
  */
-typedef struct _doc {
+typedef struct {
     /**
      * @brief The type of the document.
      */
     pp_doc_type_t type;
-    union {
-        struct {
-            /**
-             * @brief The first document to be appended.
-             *
-             * Valid when type == @p PP_DOC_APPEND.
-             */
-            const struct _doc* doc_a;
-            /**
-             * @brief The second document to be appended.
-             *
-             * Valid when type == @p PP_DOC_APPEND.
-             */
-            const struct _doc* doc_b;
-        };
-        struct {
-            /**
-             * @brief The text to display.
-             *
-             * Valid when type == @p PP_DOC_TEXT.
-             */
-            const char* text;
-            /**
-             * @brief The length of the text to display.
-             *
-             * Valid when type == @p PP_DOC_TEXT.
-             */
-            size_t length;
-        };
-        struct {
-            /**
-             * @brief The amount by which to increase the indent.
-             *
-             * Valid when type == @p PP_DOC_NEST.
-             */
-            size_t indent;
-            /**
-             * @brief The document to nest with the new indentation.
-             *
-             * Valid when type == @p PP_DOC_NEST.
-             */
-            const struct _doc* doc_nested;
-        };
-        /**
-         * @brief The document to group.
-         *
-         * Valid when type == @p PP_DOC_GROUP.
-         */
-        const struct _doc* doc_grouped;
-    };
-} doc;
-
+} pp_doc;
 
 /**
- * @brief Initialize a nil document.
- *
- * @param result The document to initialize.
+ * @brief A text document object.
  */
-void _pp_nil(doc* result);
+typedef struct {
+    pp_doc_type_t type;
+    /**
+     * @brief The text to display.
+     */
+    const char* text;
+    /**
+     * @brief The length of the text to display.
+     */
+    size_t length;
+} pp_doc_text;
 
 /**
- * @brief Initialize a separator document.
+ * @brief An append document object.
+ */
+typedef struct {
+    pp_doc_type_t type;
+    /**
+     * @brief The first document to be appended.
+     */
+    const pp_doc* a;
+    /**
+     * @brief The second document to be appended.
+     */
+    const pp_doc* b;
+} pp_doc_append;
+
+/**
+ * @brief A nest document object.
+ */
+typedef struct {
+    pp_doc_type_t type;
+    /**
+     * @brief The amount by which to increase the indent.
+     */
+    size_t indent;
+    /**
+     * @brief The document to nest with the new indentation.
+     */
+    const pp_doc* nested;
+} pp_doc_nest;
+
+/**
+ * @brief A group document object.
+ */
+typedef struct {
+    pp_doc_type_t type;
+    /**
+     * @brief The document to group.
+     */
+    const pp_doc* grouped;
+} pp_doc_group;
+
+
+/**
+ * @brief A nil document.
+ */
+extern pp_doc* _pp_nil;
+
+/**
+ * @brief A separator document.
  *
  * A separator is most commonly represented as a space, but may be omitted in
  * newlines.
- *
- * @param result The document to initialize.
  */
-void _pp_sep(doc* result);
+extern pp_doc* _pp_sep;
 
 /**
  * @brief Initialize a text document.
@@ -104,14 +105,12 @@ void _pp_sep(doc* result);
  * @param text The text of the document. Ownership of memory is not accounted for.
  * @param length The length of text to use.
  */
-void _pp_text(doc* result, const char* text, size_t length);
+void _pp_text(pp_doc_text* result, const char* text, size_t length);
 
 /**
- * @brief Initialize a line document.
- *
- * @param result The document to initialize.
+ * @brief A line document.
  */
-void _pp_line(doc* result);
+extern pp_doc* _pp_line;
 
 /**
  * @brief Initialize a nested document.
@@ -123,7 +122,7 @@ void _pp_line(doc* result);
  * @param indent The amount by which to increase the indent.
  * @param nested The nested document.
  */
-void _pp_nest(doc* result, size_t indent, const doc* nested);
+void _pp_nest(pp_doc_nest* result, size_t indent, const pp_doc* nested);
 
 /**
  * @brief Initialize an appended document.
@@ -132,7 +131,7 @@ void _pp_nest(doc* result, size_t indent, const doc* nested);
  * @param a The first document to append.
  * @param b The second document to append.
  */
-void _pp_append(doc* result, const doc* a, const doc* b);
+void _pp_append(pp_doc_append* result, const pp_doc* a, const pp_doc* b);
 
 /**
  * @brief Initialize a grouped document.
@@ -143,7 +142,7 @@ void _pp_append(doc* result, const doc* a, const doc* b);
  * @param result The document to initialize.
  * @param d The document to group.
  */
-void _pp_group(doc* result, const doc* d);
+void _pp_group(pp_doc_group* result, const pp_doc* d);
 
 /** @} */
 
@@ -151,7 +150,9 @@ void _pp_group(doc* result, const doc* d);
  * @{
  */
 
-typedef struct {
+typedef struct _pp_settings pp_settings;
+
+struct _pp_settings {
     /**
      * @brief The maximum width of a line.
      */
@@ -162,7 +163,41 @@ typedef struct {
      * Anything exceeding this indent will be truncated to it.
      */
     size_t max_indent;
-} pp_settings;
+    /**
+     * @brief Extension evaluator function.
+     *
+     * Set to NULL to not evaluate any extensions. In this case, if an
+     * extension document is encountered, it will be completely ignored.
+     *
+     * If a document has a type that is greater than or equal to @p
+     * PP_DOC_EXTENSION_START, this function is called on the document. It
+     * should return the new type that the document should be considered as.
+     * Note that the document's fields (besides @p type) should be set
+     * accordingly.
+     *
+     * This is useful for taking advantage of custom settings. The @p settings
+     * object that is passed to @p _pp_print could be a struct that merely
+     * starts with the @p pp_settings struct, and contains more settings that
+     * interacts with extensions in different ways. Likewise the extension
+     * documents need to (when applicable, based on the types to which they
+     * will evaluate) contain a @p doc struct at the beginning, but may contain
+     * extra data. This function will be called repeatedly until the returned type
+     * is less than @p PP_DOC_EXTENSION_START.
+     *
+     * Because the @p type field is not expected to be overwritten, it is
+     * possible to change state in the document such that the document would
+     * behave the same if another call to @p _pp_print is made, although it is
+     * up to extension implementors to fulfill this behavior (if desired).
+     *
+     * Note that @p d may be set by this method to change the location of the
+     * document to be used.
+     *
+     * @param settings The settings object.
+     * @param type The type of the document.
+     * @param d A double-pointer to The document to evaluate. May be changed.
+     */
+    pp_doc_type_t (*evaluate_extension)(const pp_settings* settings, pp_doc_type_t type, pp_doc** d);
+};
 
 /** @} */
 
@@ -192,30 +227,30 @@ typedef struct {
  * @param settings The settings to use when printing.
  * @param document The document to print.
  */
-void _pp_pretty(const pp_writer* writer, const pp_settings* settings, const doc* document);
+void _pp_pretty(const pp_writer* writer, const pp_settings* settings, const pp_doc* document);
 
 /** @} */
 
 
 /** @defgroup MallocAPI Malloc API
  * 
- * Most users should find this sufficient.
+ * Most users should find this API sufficient.
  * @{
  */
 
 /**
  * @brief Create a nil document.
  *
- * @return The document, or NULL if the document could not be allocated.
+ * @return The document (not malloc'd).
  */
-doc* pp_nil(void);
+pp_doc* pp_nil(void);
 
 /**
  * @brief Create a separator document.
  *
- * @return The document, or NULL if the document could not be allocated.
+ * @return The document (not malloc'd).
  */
-doc* pp_sep(void);
+pp_doc* pp_sep(void);
 
 /**
  * @brief Create a text document.
@@ -225,14 +260,14 @@ doc* pp_sep(void);
  *
  * @return The document, or NULL if the document could not be allocated.
  */
-doc* pp_text(const char* text, size_t length);
+pp_doc* pp_text(const char* text, size_t length);
 
 /**
  * @brief Create a line document.
  *
- * @return The document, or NULL if the document could not be allocated.
+ * @return The document (not malloc'd).
  */
-doc* pp_line(void);
+pp_doc* pp_line(void);
 
 /**
  * @brief Create a nested document.
@@ -242,7 +277,7 @@ doc* pp_line(void);
  *
  * @return The document, or NULL if the document could not be allocated.
  */
-doc* pp_nest(size_t indent, const doc* nested);
+pp_doc* pp_nest(size_t indent, const pp_doc* nested);
 
 /**
  * @brief Create an appended document.
@@ -252,7 +287,7 @@ doc* pp_nest(size_t indent, const doc* nested);
  *
  * @return The document, or NULL if the document could not be allocated.
  */
-doc* pp_append(const doc* a, const doc* b);
+pp_doc* pp_append(const pp_doc* a, const pp_doc* b);
 
 /**
  * @brief Create a grouped document.
@@ -261,7 +296,7 @@ doc* pp_append(const doc* a, const doc* b);
  *
  * @return The document, or NULL if the document could not be allocated.
  */
-doc* pp_group(const doc* d);
+pp_doc* pp_group(const pp_doc* d);
 
 /**
  * @brief Free a document.
@@ -270,7 +305,21 @@ doc* pp_group(const doc* d);
  *
  * @param d The document to free.
  */
-void pp_free(doc* d);
+void pp_free(pp_doc* d);
+
+/**
+ * @brief An extension-aware free function.
+ *
+ * If @p free_ext is NULL, ignores extension documents.
+ *
+ * This frees the memory of all sub-documents, and calls @p free_ext when an
+ * extension document is encountered. @p free_ext is expected to also free the
+ * document pointer (if necessary).
+ *
+ * @param free_ext The free function used for extension documents.
+ * @param d The document to free.
+ */
+void pp_free_ext(void (*free_ext)(pp_doc* d), pp_doc* d);
 
 /** @} */
 
@@ -287,7 +336,7 @@ void pp_free(doc* d);
  *
  * @return The document, or NULL if the document could not be allocated.
  */
-doc* pp_string(const char* str);
+pp_doc* pp_string(const char* str);
 
 /**
  * @brief Create a document with space-separated words.
@@ -300,7 +349,7 @@ doc* pp_string(const char* str);
  *
  * @return The document, or NULL if the document could not be allocated.
  */
-doc* pp_words(const char* words);
+pp_doc* pp_words(const char* words);
 
 /**
  * @brief Append all documents passed as parameters.
@@ -310,7 +359,7 @@ doc* pp_words(const char* words);
  * @return The document, or NULL if the document could not be allocated.
  */
 #define pp_appends(...) pp_appends_impl(0, __VA_ARGS__, NULL)
-doc* pp_appends_impl(size_t count, ...);
+pp_doc* pp_appends_impl(size_t count, ...);
 
 /** @} */
 
@@ -325,7 +374,7 @@ doc* pp_appends_impl(size_t count, ...);
  * @param settings The settings to use when printing.
  * @param document The document to print.
  */
-void pp_pretty(FILE* f, const pp_settings* settings, const doc* document);
+void pp_pretty(FILE* f, const pp_settings* settings, const pp_doc* document);
 
 /** @} */
 

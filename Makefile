@@ -12,12 +12,14 @@ example: example/c-api
 $(BUILD)/libprettyprint.a: src/prettyprint.o | $(BUILD)
 	$(AR) rcs $@ $^
 
-$(BUILD)/prettyprint.h: src/prettyprint.h
+$(BUILD)/prettyprint.h: src/prettyprint.h | $(BUILD)
 	cp $< $@
 
 example/c-api: CFLAGS+=-I$(BUILD)
 example/c-api: example/c-api.o $(BUILD)/libprettyprint.a
 	$(CC) $(LDFLAGS) -o $@ $^
+
+example/c-api.o: $(BUILD)/prettyprint.h
 
 $(BUILD):
 	mkdir -p $@
