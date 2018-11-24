@@ -4,145 +4,7 @@
 #include <string.h>
 
 #include "prettyprint.h"
-
-#define DOCAS(d,n) ((const pp_doc_##n*)(d))
-
-static pp_doc _nil = { PP_DOC_NIL };
-pp_doc* _pp_nil = &_nil;
-
-static pp_doc _sep = { PP_DOC_SEP };
-pp_doc* _pp_sep = &_sep;
-
-void _pp_text(pp_doc_text* restrict result, const char* restrict text, size_t length) {
-    result->type = PP_DOC_TEXT;
-    result->text = text;
-    result->length = length;
-}
-
-static pp_doc _line = { PP_DOC_LINE };
-pp_doc* _pp_line = &_line;
-
-void _pp_nest(pp_doc_nest* restrict result, size_t indent, const pp_doc* restrict nested) {
-    result->type = PP_DOC_NEST;
-    result->indent = indent;
-    result->nested = nested;
-}
-
-void _pp_append(pp_doc_append* restrict result, const pp_doc* restrict a, const pp_doc* restrict b) {
-    result->type = PP_DOC_APPEND;
-    result->a = a;
-    result->b = b;
-}
-
-void _pp_group(pp_doc_group* restrict result, const pp_doc* restrict d) {
-    result->type = PP_DOC_GROUP;
-    result->grouped = d;
-}
-
-static int can_flatten(const pp_settings* restrict settings, const pp_doc* restrict d, size_t* restrict remaining) {
-    // Evaluate extensions
-    pp_doc_type_t tp = d->type;
-    while (tp >= PP_DOC_EXTENSION_START) {
-        if (settings->evaluate_extension == NULL) return 0;
-        tp = settings->evaluate_extension(settings, tp, (pp_doc**)&d);
-    }
-
-    switch (d->type) {
-        case PP_DOC_NIL:
-            return 1;
-        case PP_DOC_SEP:
-            if (*remaining > 0) *remaining -= 1;
-            return 1;
-        case PP_DOC_TEXT:
-            if (*remaining < DOCAS(d,text)->length) return 0;
-            *remaining -= DOCAS(d,text)->length;
-            return 1;
-        case PP_DOC_LINE:
-            if (*remaining < 1) return 0;
-            *remaining -= 1;
-            return 1;
-        case PP_DOC_NEST:
-            return can_flatten(settings, DOCAS(d,nest)->nested, remaining);
-        case PP_DOC_APPEND:
-            if (!can_flatten(settings, DOCAS(d,append)->a, remaining)) return 0;
-            return can_flatten(settings, DOCAS(d,append)->b, remaining);
-        case PP_DOC_GROUP:
-            return can_flatten(settings, DOCAS(d,group)->grouped, remaining);
-        default:
-            return 0;
-    }
-}
-
-static void pretty(const pp_writer* restrict writer, const pp_settings* restrict settings, const pp_doc* restrict d, 
-        size_t* restrict remaining, size_t indent, int group) {
-    // Evaluate extensions
-    pp_doc_type_t tp = d->type;
-    while (tp >= PP_DOC_EXTENSION_START) {
-        if (settings->evaluate_extension == NULL) return;
-        tp = settings->evaluate_extension(settings, tp, (pp_doc**)&d);
-    }
-
-#define do_write(c,l) writer->write(writer->data,c,l)
-    switch (tp) {
-        case PP_DOC_NIL:
-            break;
-        case PP_DOC_SEP:
-            if (settings->width - indent != *remaining && *remaining != 0) {
-                do_write(" ", 1);
-                *remaining -= 1;
-            }
-            break;
-        case PP_DOC_TEXT:
-            if (DOCAS(d,text)->length > *remaining) {
-                pretty(writer, settings, _pp_line, remaining, indent, group);
-            }
-            const pp_doc_text* t = DOCAS(d,text);
-            size_t len = t->length;
-            while (len > *remaining) {
-                do_write(t->text + (t->length - len), *remaining);
-                len -= *remaining;
-                *remaining = 0;
-                pretty(writer, settings, _pp_line, remaining, indent, group);
-            }
-            do_write(t->text + (t->length - len), len);
-            *remaining -= len;
-            break;
-        case PP_DOC_LINE:
-            if (group) {
-                do_write(" ", 1);
-                *remaining -= 1;
-            }
-            else {
-                do_write("\n", 1);
-                for (size_t i = 0; i < indent; i++) do_write(" ", 1);
-                *remaining = settings->width - indent;
-            }
-            break;
-        case PP_DOC_NEST:
-            if (0) {}
-            const pp_doc_nest* n = DOCAS(d,nest);
-            size_t newindent = indent + n->indent;
-            if (newindent > settings->max_indent) newindent = settings->max_indent;
-            pretty(writer, settings, n->nested, remaining, newindent, group);
-            break;
-        case PP_DOC_APPEND:
-            pretty(writer, settings, DOCAS(d,append)->a, remaining, indent, group);
-            pretty(writer, settings, DOCAS(d,append)->b, remaining, indent, group);
-            break;
-        case PP_DOC_GROUP:
-            if (0) {}
-            size_t r = *remaining;
-            const pp_doc* grouped = DOCAS(d,group)->grouped;
-            pretty(writer, settings, grouped, remaining, indent, can_flatten(settings, grouped, &r));
-            break;
-    }
-#undef do_write
-}
-
-void _pp_pretty(const pp_writer* restrict writer, const pp_settings* restrict settings, const pp_doc* restrict document) {
-    size_t remaining = settings->width;
-    pretty(writer, settings, document, &remaining, 0, 0);
-}
+#include "prettyprint_base.c"
 
 pp_doc* pp_nil(void) {
     return _pp_nil;
@@ -225,7 +87,7 @@ pp_doc* pp_string(const char* str) {
 
 pp_doc* pp_words(const char* text) {
     const char* start = text;
-    while (*text != '\0' && *text != ' ') text++;
+    while (*text != '\0' && *text != ' ' && *text != '\n') text++;
     if (*text == '\0') {
         if (start == text) return pp_nil();
         return pp_text(start, text - start);
@@ -234,10 +96,12 @@ pp_doc* pp_words(const char* text) {
         pp_doc* rest = pp_words(text+1);
         if (rest == NULL) return NULL;
 
-        pp_doc* s = pp_sep();
+        pp_doc* s;
+        if (*text == '\n') s = pp_line();
+        else s = pp_sep();
         
-        pp_doc* seprest = pp_append(s, rest);
-        if (seprest == NULL) {
+        pp_doc* srest = pp_append(s, rest);
+        if (srest == NULL) {
             pp_free(rest);
             pp_free(s);
             return NULL;
@@ -245,14 +109,14 @@ pp_doc* pp_words(const char* text) {
 
         pp_doc* t = pp_text(start, text - start);
         if (t == NULL) {
-            pp_free(seprest);
+            pp_free(srest);
             return NULL;
         }
 
-        pp_doc* ret = pp_append(t, seprest);
+        pp_doc* ret = pp_append(t, srest);
         if (ret == NULL) {
             pp_free(t);
-            pp_free(seprest);
+            pp_free(srest);
             return NULL;
         }
         return ret;
