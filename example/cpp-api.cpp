@@ -12,8 +12,10 @@ void print_basic() {
                 + "across lines")
             + pp::line() + "and with really long lines with many words including "
                            "veryveryveryverylongandcontiguouswordswhichneedwrapping");
-    std::cout << doc;
-    //std::cout << pp::set_width(40) << pp::set_max_indent(20) << doc;
+
+    auto settings = std::cout << pp::set_width(40);
+    settings << pp::set_max_indent(20) << doc
+             << std::endl << std::endl;
 }
 
 void print_grouped() {
@@ -23,8 +25,13 @@ void print_grouped() {
             "three" + pp::line() +
             "four");
 
-    //std::cout << pp::set_width(40) << pp::set_max_indent(20) << doc;
-    //std::cout << pp::set_width(15) << pp::set_max_indent(4) << doc;
+    auto settings = std::cout << pp::set_width(40);
+    settings << pp::set_max_indent(20) << doc
+             << std::endl << std::endl;
+
+    settings = std::cout << pp::set_width(15);
+    settings << pp::set_max_indent(4) << doc
+             << std::endl << std::endl;
 }
 
 int main() {

@@ -18,7 +18,7 @@ doc_text::doc_text(const char* str) {
     _pp_text(static_cast<pp_doc_text*>(this), str, std::strlen(str));
 }
 
-doc_string::doc_string(const std::string s)
+doc_string::doc_string(const std::string& s)
     : s(s)
 {
     _pp_text(static_cast<pp_doc_text*>(this), this->s.data(), this->s.size());
@@ -29,6 +29,12 @@ doc_nest::doc_nest(size_t indent, std::shared_ptr<const doc> nested)
 {
     _pp_nest(static_cast<pp_doc_nest*>(this), indent, s_nested.get());
 }
+
+void doc_nest::set_nested(std::shared_ptr<const doc> nested) {
+    s_nested = nested;
+    this->nested = s_nested.get();
+}
+
 
 doc_append::doc_append(std::shared_ptr<const doc> a, std::shared_ptr<const doc> b)
     : s_a(a)
@@ -61,10 +67,12 @@ static std::shared_ptr<doc> get_words(const char* t) {
     }
 }
 
-doc_words::doc_words(const std::string s)
-    : doc_nest(0, get_words(s.data()))
+doc_words::doc_words(const std::string& s)
+    : doc_nest(0, nullptr)
     , s(std::move(s))
-{}
+{
+    set_nested(get_words(this->s.data()));
+}
 
 }
 
@@ -97,7 +105,7 @@ std::shared_ptr<doc> text(const char* str) {
     return make_shared_d<data::doc_text>(str);
 }
 
-std::shared_ptr<doc> text(const std::string s) {
+std::shared_ptr<doc> text(const std::string& s) {
     return make_shared_d<data::doc_string>(s);
 }
 
@@ -121,7 +129,7 @@ std::shared_ptr<doc> operator+(std::shared_ptr<const doc> a, std::shared_ptr<con
     return append(a, b);
 }
 
-std::shared_ptr<doc> operator+(std::shared_ptr<const doc> a, std::string b) {
+std::shared_ptr<doc> operator+(std::shared_ptr<const doc> a, const std::string& b) {
     return a + words(b);
 }
 
@@ -130,11 +138,11 @@ std::shared_ptr<doc> operator<<(std::shared_ptr<const doc> a, std::shared_ptr<co
     return a + sep() + b;
 }
 
-std::shared_ptr<doc> words(const std::string words) {
+std::shared_ptr<doc> words(const std::string& words) {
     return make_shared_d<data::doc_words>(words);
 }
 
-std::shared_ptr<doc> operator<<(std::shared_ptr<const doc> a, std::string w) {
+std::shared_ptr<doc> operator<<(std::shared_ptr<const doc> a, const std::string& w) {
     return a << words(w);
 }
 

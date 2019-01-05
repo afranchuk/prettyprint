@@ -423,13 +423,15 @@ struct doc_text : public from_doc<pp_doc_text> {
 };
 
 struct doc_string : public from_doc<pp_doc_text> {
-    doc_string(const std::string s);
+    doc_string(const std::string& s);
 private:
     const std::string s;
 };
 
 struct doc_nest : public from_doc<pp_doc_nest> {
     doc_nest(size_t indent, std::shared_ptr<const doc> nested);
+protected:
+    void set_nested(std::shared_ptr<const doc> nested);
 private:
     std::shared_ptr<const doc> s_nested;
 };
@@ -448,7 +450,7 @@ private:
 };
 
 struct doc_words : public doc_nest {
-    doc_words(std::string s);
+    doc_words(const std::string& s);
 private:
     const std::string s;
 };
@@ -461,7 +463,7 @@ std::shared_ptr<doc> sep();
 
 std::shared_ptr<doc> text(const char* t, size_t length);
 std::shared_ptr<doc> text(const char* str);
-std::shared_ptr<doc> text(const std::string s);
+std::shared_ptr<doc> text(const std::string& s);
 
 std::shared_ptr<doc> line();
 
@@ -471,15 +473,15 @@ std::shared_ptr<doc> append(std::shared_ptr<const doc> a, std::shared_ptr<const 
 
 std::shared_ptr<doc> group(std::shared_ptr<const doc> grouped);
 
-std::shared_ptr<doc> words(const std::string words);
+std::shared_ptr<doc> words(const std::string& words);
 
 /** Alias of append. */
 std::shared_ptr<doc> operator+(std::shared_ptr<const doc> a, std::shared_ptr<const doc> b);
-std::shared_ptr<doc> operator+(std::shared_ptr<const doc> a, std::string words);
+std::shared_ptr<doc> operator+(std::shared_ptr<const doc> a, const std::string& words);
 
 /** Aliases of append that add a separator. */
 std::shared_ptr<doc> operator<<(std::shared_ptr<const doc> a, std::shared_ptr<const doc> b);
-std::shared_ptr<doc> operator<<(std::shared_ptr<const doc> a, std::string words);
+std::shared_ptr<doc> operator<<(std::shared_ptr<const doc> a, const std::string& words);
 
 template <typename T>
 std::shared_ptr<doc> operator<<(std::shared_ptr<const doc> a, T& b) {
